@@ -6,6 +6,8 @@ import enum
 
 class ProctoringEventType(enum.Enum):
     TAB_SWITCH = "tab_switch"
+    TAB_HIDDEN = "tab_hidden"      #  add this
+    TAB_VISIBLE = "tab_visible"    #  add this
     COPY_PASTE = "copy_paste"
     WINDOW_BLUR = "window_blur"
     WINDOW_FOCUS = "window_focus"
@@ -14,6 +16,7 @@ class ProctoringEventType(enum.Enum):
     RIGHT_CLICK = "right_click"
     KEY_COMBINATION = "key_combination"
     SUSPICIOUS_ACTIVITY = "suspicious_activity"
+
 
 class ProctoringEvent(Base):
     __tablename__ = "proctoring_events"

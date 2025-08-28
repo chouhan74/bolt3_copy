@@ -3,12 +3,30 @@
 {% block title %}{{ question.title }} - Assessment{% endblock %}
 
 {% block extra_head %}
-<script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.39.0/min/vs/loader.min.js"></script>
-<style>
+  <!-- Monaco loader -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.39.0/min/vs/loader.min.js"></script>
+  <script>
+    // Configure Monaco base + workers (avoids worker load hangs)
+    window.MonacoEnvironment = {
+      getWorkerUrl: function (_workerId, _label) {
+        const base = 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.39.0/min/';
+        const src  = `${base}vs/base/worker/workerMain.js`;
+        return `data:text/javascript;charset=utf-8,${encodeURIComponent(`
+          self.MonacoEnvironment = { baseUrl: '${base}' };
+          importScripts('${src}');
+        `)}`;
+      }
+    };
+    if (typeof require !== 'undefined') {
+      require.config({ paths: { 'vs': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.39.0/min/vs' } });
+    }
+  </script>
+  <style>
+    /* Styles for split view and console */
     .split-view {
         display: grid;
         grid-template-columns: 1fr 1fr;
-        height: calc(100vh - 64px);
+        height: calc(100vh - 64px); /* Adjust based on header height */
     }
     
     .problem-statement {
@@ -27,11 +45,12 @@
     }
     
     .console-panel {
-        height: 200px;
+        height: 200px; /* Fixed height for console */
         overflow-y: auto;
         background: #1e1e1e;
         color: #d4d4d4;
         font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+        padding: 1rem; /* Added padding */
     }
 
     pre code {
@@ -47,468 +66,784 @@
         border: 1px solid #e5e7eb;
         border-radius: 0.5rem;
         margin: 1rem 0;
+        padding: 1rem; /* Added padding */
     }
-</style>
+    /* Ensure prose styles are applied for markdown rendering */
+    .prose {
+        max-width: none; /* Override default max-width for full content width */
+    }
+    .prose h2 { font-size: 1.5em; font-weight: bold; margin-bottom: 1rem; }
+    .prose h3 { font-size: 1.25em; font-weight: bold; margin-bottom: 0.75rem; }
+    .prose p { margin-bottom: 1em; }
+    .prose ul, .prose ol { margin-bottom: 1em; padding-left: 1.5em; }
+    .prose li { margin-bottom: 0.5em; }
+    .prose pre { background: #f8f9fa; padding: 1rem; border-radius: 0.5rem; overflow-x: auto; }
+    .prose code { background: #e0e0e0; padding: 0.2em 0.4em; border-radius: 0.3em; }
+  </style>
 {% endblock %}
 
 {% block content %}
-<!-- Question Interface -->
-<div class="min-h-screen bg-white" x-data="questionApp()">
-    <!-- Header -->
-    <div class="bg-white shadow-sm border-b">
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div class="flex justify-between items-center h-16">
-                <div class="flex items-center">
-                    <a href="/candidate/assessment/{{ assessment_candidate.id }}" class="text-blue-600 hover:text-blue-800 mr-4">
-                        <i class="fas fa-arrow-left"></i>
-                    </a>
-                    <div>
-                        <h1 class="text-lg font-semibold text-gray-900">{{ question.title }}</h1>
-                        <div class="flex items-center space-x-2 text-sm text-gray-500">
-                            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium
-                                {% if question.difficulty.value == 'easy' %}
-                                    bg-green-100 text-green-800
-                                {% elif question.difficulty.value == 'medium' %}
-                                    bg-yellow-100 text-yellow-800
-                                {% else %}
-                                    bg-red-100 text-red-800
-                                {% endif %}
-                            ">
-                                {{ question.difficulty.value.title() }}
-                            </span>
-                            <span>{{ question.max_score }} points</span>
-                            <span>{{ question.time_limit_minutes }} minutes</span>
-                        </div>
-                    </div>
-                </div>
-                <div class="flex items-center space-x-2">
-                    <select x-model="selectedLanguage" @change="changeLanguage()" class="border border-gray-300 rounded px-3 py-1 text-sm">
-                        {% set languages = question.allowed_languages.split(',') if question.allowed_languages else ['python'] %}
-                        {% for lang in languages %}
-                        <option value="{{ lang.strip() }}">{{ lang.strip().title() }}</option>
-                        {% endfor %}
-                    </select>
-                    <button @click="runCode()" :disabled="isRunning" class="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white px-4 py-2 rounded text-sm transition-colors">
-                        <span x-show="!isRunning">
-                            <i class="fas fa-play mr-1"></i>
-                            Run Code
-                        </span>
-                        <span x-show="isRunning">
-                            <i class="fas fa-spinner fa-spin mr-1"></i>
-                            Running...
-                        </span>
-                    </button>
-                    <button @click="submitCode()" :disabled="isSubmitting" class="bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white px-4 py-2 rounded text-sm transition-colors">
-                        <span x-show="!isSubmitting">
-                            <i class="fas fa-check mr-1"></i>
-                            Submit
-                        </span>
-                        <span x-show="isSubmitting">
-                            <i class="fas fa-spinner fa-spin mr-1"></i>
-                            Submitting...
-                        </span>
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
+<div 
+  x-data="questionPage()" 
+  x-init="initPage()" 
+  x-cloak 
+  class="min-h-screen bg-white"
+>
 
-    <!-- Split View -->
+  <!-- Header -->
+  <div class="bg-white shadow-sm border-b">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="flex justify-between items-center h-16">
+        <div class="flex items-center">
+          <a href="/candidate/assessment/{{ assessment_candidate.id }}" class="text-blue-600 hover:text-blue-800 mr-4">
+            <i class="fas fa-arrow-left"></i>
+          </a>
+          <div>
+            <h1 class="text-lg font-semibold text-gray-900">{{ question.title }}</h1>
+            <div class="flex items-center space-x-2 text-sm text-gray-500">
+              <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium
+                  {% if question.difficulty.value == 'easy' %}
+                      bg-green-100 text-green-800
+                  {% elif question.difficulty.value == 'medium' %}
+                      bg-yellow-100 text-yellow-800
+                  {% else %}
+                      bg-red-100 text-red-800
+                  {% endif %}
+              ">
+                  {{ question.difficulty.value.title() }}
+              </span>
+              <span>{{ question.max_score }} points</span>
+              <span>{{ question.time_limit_minutes }} minutes</span>
+              <span class="ml-4">Time remaining: <span x-text="timeRemainingText"></span></span>
+            </div>
+          </div>
+        </div>
+        <div class="flex items-center space-x-2">
+          <!-- Proctoring status bar (integrated into header for space) -->
+          <div class="flex items-center gap-3 text-sm text-gray-500">
+            <strong>Proctoring:</strong> 
+            <span :class="webcamEnabled ? 'text-green-600' : 'text-amber-600'">
+              <template x-if="webcamEnabled">Webcam ON</template>
+              <template x-if="!webcamEnabled">Webcam OFF</template>
+            </span>
+            <span class="text-gray-300">|</span>
+            <strong>Fullscreen:</strong>
+            <span :class="isFullscreen ? 'text-green-600' : 'text-amber-600'">
+              <template x-if="isFullscreen">Active</template>
+              <template x-if="!isFullscreen">Inactive</template>
+            </span>
+          </div>
+          <button 
+            type="button" 
+            @click="enterFullscreen()"
+            class="px-3 py-1.5 rounded-lg border hover:bg-gray-50 text-sm"
+          >
+            Enter Fullscreen
+          </button>
+          <button 
+            type="button" 
+            @click="toggleWebcam()"
+            class="px-3 py-1.5 rounded-lg border hover:bg-gray-50 text-sm"
+          >
+            <template x-if="!webcamEnabled">Enable Webcam</template>
+            <template x-if="webcamEnabled">Disable Webcam</template>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main Content Area -->
+  {% if question.question_type.value == 'coding' %}
     <div class="split-view">
-        <!-- Problem Statement -->
-        <div class="problem-statement">
-            <div class="p-6">
-                <div class="prose max-w-none">
-                    <h2 class="text-xl font-bold mb-4">Problem Description</h2>
-                    <div class="mb-6">
-                        {{ question.description | safe }}
-                    </div>
+      <!-- Problem Statement -->
+      <div class="problem-statement p-6">
+        <div class="prose">
+          <h2 class="text-xl font-bold mb-4">Problem Description</h2>
+          <div class="mb-6">
+            {{ question.description | safe }} {# Using description from old file #}
+          </div>
 
-                    {% if public_test_cases %}
-                    <h3 class="text-lg font-semibold mb-3">Sample Test Cases</h3>
-                    {% for test_case in public_test_cases %}
-                    <div class="test-case p-4 mb-4">
-                        <div class="grid grid-cols-2 gap-4">
-                            <div>
-                                <h4 class="font-semibold text-sm mb-2">Input:</h4>
-                                <pre class="bg-white border p-2 rounded text-sm font-mono">{{ test_case.input_data }}</pre>
-                            </div>
-                            <div>
-                                <h4 class="font-semibold text-sm mb-2">Output:</h4>
-                                <pre class="bg-white border p-2 rounded text-sm font-mono">{{ test_case.expected_output }}</pre>
-                            </div>
-                        </div>
-                    </div>
-                    {% endfor %}
-                    {% endif %}
+          {% if public_test_cases %} {# Using public_test_cases from old file #}
+          <h3 class="text-lg font-semibold mb-3">Sample Test Cases</h3>
+          {% for test_case in public_test_cases %}
+          <div class="test-case p-4 mb-4">
+              <div class="grid grid-cols-2 gap-4">
+                  <div>
+                      <h4 class="font-semibold text-sm mb-2">Input:</h4>
+                      <pre class="bg-white border p-2 rounded text-sm font-mono">{{ test_case.input_data }}</pre>
+                  </div>
+                  <div>
+                      <h4 class="font-semibold text-sm mb-2">Output:</h4>
+                      <pre class="bg-white border p-2 rounded text-sm font-mono">{{ test_case.expected_output }}</pre>
+                  </div>
+              </div>
+          </div>
+          {% endfor %}
+          {% endif %}
 
-                    {% if question.tags %}
-                    <div class="mt-6">
-                        <h4 class="font-semibold mb-2">Tags:</h4>
-                        <div class="flex flex-wrap gap-2">
-                            {% set tags = question.tags.split(',') if question.tags else [] %}
-                            {% for tag in tags %}
-                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                                {{ tag.strip() }}
-                            </span>
-                            {% endfor %}
-                        </div>
-                    </div>
-                    {% endif %}
-                </div>
-            </div>
+          {% if question.tags %}
+          <div class="mt-6">
+              <h4 class="font-semibold mb-2">Tags:</h4>
+              <div class="flex flex-wrap gap-2">
+                  {% set tags = question.tags.split(',') if question.tags else [] %}
+                  {% for tag in tags %}
+                  <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                      {{ tag.strip() }}
+                  </span>
+                  {% endfor %}
+              </div>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+
+      <!-- Code Editor Panel -->
+      <div class="code-panel">
+        <div class="flex items-center justify-between p-4 bg-gray-50 border-b">
+          <h2 class="font-semibold text-lg">Editor</h2>
+          <div class="flex items-center gap-2">
+            <select x-model="language" @change="changeLanguage()" class="text-sm border rounded px-2 py-1">
+              {% set languages = question.allowed_languages.split(',') if question.allowed_languages else ['python'] %}
+              {% for lang in languages %}
+              <option value="{{ lang.strip() }}">{{ lang.strip().title() }}</option>
+              {% endfor %}
+            </select>
+            <span class="text-xs text-gray-500">Autosave: <span x-text="autosaveStatus"></span></span>
+          </div>
         </div>
 
-        <!-- Code Editor -->
-        <div class="code-panel">
-            <div class="editor-container">
-                <div id="editor" class="h-full"></div>
-            </div>
-            
-            <!-- Console -->
-            <div class="console-panel p-4">
-                <div class="flex items-center justify-between mb-2">
-                    <h3 class="text-sm font-semibold text-gray-300">Console Output</h3>
-                    <button @click="clearConsole()" class="text-xs text-gray-400 hover:text-gray-200">
-                        <i class="fas fa-trash mr-1"></i>
-                        Clear
-                    </button>
-                </div>
-                <div x-ref="console" class="text-sm whitespace-pre-wrap">
-                    <div x-show="!consoleOutput" class="text-gray-400 italic">Run your code to see output here...</div>
-                    <div x-html="consoleOutput"></div>
-                </div>
-            </div>
+        <div id="editor" class="editor-container"></div>
+        
+        <!-- Console -->
+        <div class="console-panel">
+          <div class="flex items-center justify-between mb-2">
+              <h3 class="text-sm font-semibold text-gray-300">Console Output</h3>
+              <button @click="clearConsole()" class="text-xs text-gray-400 hover:text-gray-200">
+                  <i class="fas fa-trash mr-1"></i>
+                  Clear
+              </button>
+          </div>
+          <div x-ref="console" class="text-sm whitespace-pre-wrap">
+              <div x-show="!consoleOutput" class="text-gray-400 italic">Run your code to see output here...</div>
+              <div x-html="consoleOutput"></div>
+          </div>
         </div>
+
+        <div class="flex items-center gap-2 p-4 border-t bg-gray-50">
+          <button 
+            @click="runCode('test')" 
+            :disabled="execution.loading"
+            class="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:bg-gray-400 transition-colors"
+          >
+            <span x-show="!execution.loading">
+              <i class="fas fa-play mr-1"></i>
+              Run Tests
+            </span>
+            <span x-show="execution.loading">
+              <i class="fas fa-spinner fa-spin mr-1"></i>
+              Running...
+            </span>
+          </button>
+          <button 
+            @click="submitCode()" 
+            :disabled="execution.loading"
+            class="px-4 py-2 rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:bg-gray-400 transition-colors"
+          >
+            <span x-show="!execution.loading">
+              <i class="fas fa-check mr-1"></i>
+              Submit
+            </span>
+            <span x-show="execution.loading">
+              <i class="fas fa-spinner fa-spin mr-1"></i>
+              Submitting...
+            </span>
+          </button>
+          <button 
+            @click="copyCode()" 
+            class="px-3 py-2 rounded-lg border hover:bg-gray-50"
+          >
+            Copy Code
+          </button>
+        </div>
+      </div>
     </div>
-</div>
+  {% endif %}
 
+  <!-- MCQ Question -->
+  {% if question.question_type.value == 'mcq' %}
+    <div class="max-w-3xl mx-auto p-4 space-y-4">
+      <div class="bg-white rounded-xl shadow p-4 space-y-4">
+        <h2 class="font-semibold text-lg">Choose the correct answer</h2>
+        <div class="prose mb-6">
+          {{ question.description | safe }} {# Using description for MCQ prompt #}
+        </div>
+        {% set options = question.options | fromjson %}
+        <div class="space-y-2">
+          {% for opt in options %}
+            <label class="flex items-start gap-2 p-2 border rounded-lg hover:bg-gray-50 cursor-pointer">
+              <input type="radio" name="mcq_answer" value="{{ opt.value }}" class="mt-1"
+                     x-model="mcqAnswer">
+              <div>
+                <div class="font-medium">{{ opt.label }}</div>
+                {% if opt.description %}
+                  <div class="text-xs text-gray-600">{{ opt.description }}</div>
+                {% endif %}
+              </div>
+            </label>
+          {% endfor %}
+        </div>
+        <div class="flex items-center gap-2">
+          <button 
+            @click="submitMcq()" 
+            class="px-3 py-2 rounded-lg bg-green-600 text-white hover:bg-green-700"
+          >
+            Submit Answer
+          </button>
+          <template x-if="mcqMessage">
+            <div class="text-sm" :class="mcqCorrect ? 'text-green-600' : 'text-red-600'" x-text="mcqMessage"></div>
+          </template>
+        </div>
+      </div>
+    </div>
+  {% endif %}
+
+  <!-- Webcam modal -->
+  <div 
+    x-show="showWebcamModal" 
+    class="fixed inset-0 bg-black/50 flex items-center justify-center z-40"
+  >
+    <div class="bg-white rounded-xl shadow p-5 w-full max-w-md space-y-3">
+      <h3 class="text-lg font-semibold">Enable Webcam (Optional)</h3>
+      <p class="text-sm text-gray-600">Allow camera access for proctoring, or continue without it.</p>
+      <video x-ref="webcamVideo" autoplay playsinline class="w-full h-48 bg-black rounded"></video>
+      <div class="flex items-center justify-end gap-2 pt-2">
+        <button @click="continueWithoutWebcam()" class="px-3 py-2 rounded-lg border hover:bg-gray-50">
+          Continue without webcam
+        </button>
+        <button @click="enableWebcam()" class="px-3 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700">
+          Enable webcam
+        </button>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
 <script>
-function questionApp() {
-    return {
-        selectedLanguage: 'python',
-        editor: null,
-        isRunning: false,
-        isSubmitting: false,
-        consoleOutput: '',
-        autoSaveInterval: null,
-        
-        init() {
-            this.initEditor();
-            this.startAutoSave();
-            this.setupProctoring();
-        },
-        
-        async initEditor() {
-            require.config({ paths: { 'vs': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.39.0/min/vs' }});
-            
-            require(['vs/editor/editor.main'], () => {
-                this.editor = monaco.editor.create(document.getElementById('editor'), {
-                    value: `{{ latest_submission.code if latest_submission else question.template_code or '' }}`.replace(/&quot;/g, '"').replace(/&#x27;/g, "'"),
-                    language: this.getMonacoLanguage(this.selectedLanguage),
-                    theme: 'vs-light',
-                    automaticLayout: true,
-                    minimap: { enabled: false },
-                    fontSize: 14,
-                    lineNumbers: 'on',
-                    roundedSelection: false,
-                    scrollBeyondLastLine: false,
-                    readOnly: false,
-                    wordWrap: 'bounded'
-                });
-                
-                // Setup change listener for auto-save
-                this.editor.onDidChangeModelContent(() => {
-                    this.scheduleAutoSave();
-                });
-            });
-        },
-        
-        getMonacoLanguage(lang) {
-            const mapping = {
-                'python': 'python',
-                'cpp': 'cpp',
-                'c': 'c',
-                'java': 'java',
-                'javascript': 'javascript'
-            };
-            return mapping[lang] || 'python';
-        },
-        
-        changeLanguage() {
-            if (this.editor) {
-                monaco.editor.setModelLanguage(this.editor.getModel(), this.getMonacoLanguage(this.selectedLanguage));
-            }
-        },
-        
-        async runCode() {
-            if (!this.editor) return;
-            
-            this.isRunning = true;
-            this.consoleOutput = '<div class="text-blue-300">Running code...</div>';
-            
-            try {
-                const code = this.editor.getValue();
-                const response = await fetch('/api/execute-code', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        question_id: {{ question.id }},
-                        code: code,
-                        language: this.selectedLanguage,
-                        run_type: 'test'
-                    })
-                });
-                
-                const result = await response.json();
-                
-                if (result.submission_id) {
-                    this.pollSubmissionStatus(result.submission_id);
-                } else {
-                    this.consoleOutput = '<div class="text-red-400">Failed to execute code</div>';
-                }
-                
-            } catch (error) {
-                this.consoleOutput = `<div class="text-red-400">Error: ${error.message}</div>`;
-            } finally {
-                this.isRunning = false;
-            }
-        },
-        
-        async submitCode() {
-            if (!this.editor) return;
-            
-            if (!confirm('Are you sure you want to submit this solution? This will be your final submission for this question.')) {
-                return;
-            }
-            
-            this.isSubmitting = true;
-            this.consoleOutput = '<div class="text-green-300">Submitting solution...</div>';
-            
-            try {
-                const code = this.editor.getValue();
-                const response = await fetch('/api/execute-code', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        question_id: {{ question.id }},
-                        code: code,
-                        language: this.selectedLanguage,
-                        run_type: 'submit'
-                    })
-                });
-                
-                const result = await response.json();
-                
-                if (result.submission_id) {
-                    this.pollSubmissionStatus(result.submission_id, true);
-                } else {
-                    this.consoleOutput = '<div class="text-red-400">Failed to submit solution</div>';
-                }
-                
-            } catch (error) {
-                this.consoleOutput = `<div class="text-red-400">Error: ${error.message}</div>`;
-            } finally {
-                this.isSubmitting = false;
-            }
-        },
-        
-        async pollSubmissionStatus(submissionId, isSubmission = false) {
-            let attempts = 0;
-            const maxAttempts = 30; // 30 seconds timeout
-            
-            const poll = async () => {
-                if (attempts >= maxAttempts) {
-                    this.consoleOutput = '<div class="text-red-400">Execution timeout</div>';
-                    this.isRunning = false;
-                    this.isSubmitting = false;
-                    return;
-                }
-                
-                try {
-                    const response = await fetch(`/api/submission/${submissionId}/status`);
-                    const status = await response.json();
-                    
-                    if (status.status === 'completed') {
-                        this.displayResults(status, isSubmission);
-                        this.isRunning = false;
-                        this.isSubmitting = false;
-                    } else if (status.status === 'error') {
-                        this.consoleOutput = `<div class="text-red-400">Execution failed: ${status.runtime_error || 'Unknown error'}</div>`;
-                        this.isRunning = false;
-                        this.isSubmitting = false;
-                    } else {
-                        attempts++;
-                        setTimeout(poll, 1000);
-                    }
-                } catch (error) {
-                    this.consoleOutput = `<div class="text-red-400">Error checking status: ${error.message}</div>`;
-                    this.isRunning = false;
-                    this.isSubmitting = false;
-                }
-            };
-            
-            poll();
-        },
-        
-        displayResults(status, isSubmission) {
-            let output = '';
-            
-            if (status.compilation_error) {
-                output += `<div class="text-red-400 mb-2">Compilation Error:</div>`;
-                output += `<div class="text-red-300 mb-4">${status.compilation_error}</div>`;
-                this.consoleOutput = output;
-                return;
-            }
-            
-            if (isSubmission) {
-                output += `<div class="text-green-400 mb-2">✅ Submission Complete!</div>`;
-                output += `<div class="text-white mb-2">Overall Verdict: <span class="font-bold ${this.getVerdictColor(status.overall_verdict)}">${status.overall_verdict}</span></div>`;
-                output += `<div class="text-white mb-4">Score: ${status.total_score}/${{}}/{{ question.max_score }}</div>`;
-            } else {
-                output += `<div class="text-blue-400 mb-2">🔍 Test Results (Public Test Cases Only):</div>`;
-            }
-            
-            if (status.results && status.results.length > 0) {
-                status.results.forEach((result, index) => {
-                    const verdictColor = this.getVerdictColor(result.verdict);
-                    output += `<div class="border-t border-gray-600 pt-2 mt-2">`;
-                    output += `<div class="text-gray-300">Test Case ${index + 1}: <span class="${verdictColor} font-bold">${result.verdict}</span></div>`;
-                    
-                    if (result.verdict === 'OK') {
-                        output += `<div class="text-green-400">✅ Passed</div>`;
-                    } else if (result.verdict === 'WA') {
-                        output += `<div class="text-red-400">❌ Wrong Answer</div>`;
-                        if (result.actual_output) {
-                            output += `<div class="text-gray-300 text-xs">Your output:</div>`;
-                            output += `<div class="text-gray-400 text-xs font-mono bg-gray-800 p-1 rounded">${result.actual_output.substring(0, 200)}</div>`;
-                        }
-                    } else {
-                        output += `<div class="text-red-400">❌ ${result.verdict}</div>`;
-                        if (result.error_message) {
-                            output += `<div class="text-red-300 text-xs">${result.error_message}</div>`;
-                        }
-                    }
-                    
-                    output += `<div class="text-gray-400 text-xs">Time: ${result.execution_time_ms}ms | Memory: ${result.memory_used_kb}KB</div>`;
-                    output += `</div>`;
-                });
-            }
-            
-            this.consoleOutput = output;
-        },
-        
-        getVerdictColor(verdict) {
-            const colors = {
-                'OK': 'text-green-400',
-                'WA': 'text-red-400',
-                'TLE': 'text-yellow-400',
-                'MLE': 'text-yellow-400',
-                'RTE': 'text-red-400',
-                'CE': 'text-red-400'
-            };
-            return colors[verdict] || 'text-gray-400';
-        },
-        
-        clearConsole() {
-            this.consoleOutput = '';
-        },
-        
-        startAutoSave() {
-            this.autoSaveInterval = setInterval(() => {
-                this.performAutoSave();
-            }, 30000); // Auto-save every 30 seconds
-        },
-        
-        scheduleAutoSave() {
-            // Clear existing timeout
-            if (this.autoSaveTimeout) {
-                clearTimeout(this.autoSaveTimeout);
-            }
-            
-            // Schedule auto-save after 5 seconds of inactivity
-            this.autoSaveTimeout = setTimeout(() => {
-                this.performAutoSave();
-            }, 5000);
-        },
-        
-        async performAutoSave() {
-            if (!this.editor) return;
-            
-            try {
-                const code = this.editor.getValue();
-                await fetch('/api/auto-save', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        question_id: {{ question.id }},
-                        code: code
-                    })
-                });
-            } catch (error) {
-                console.error('Auto-save failed:', error);
-            }
-        },
-        
-        setupProctoring() {
-            // Disable right-click context menu
-            document.addEventListener('contextmenu', (e) => {
-                e.preventDefault();
-                this.logProctoringEvent('right_click', { prevented: true });
-            });
-            
-            // Detect common key combinations
-            document.addEventListener('keydown', (e) => {
-                const suspiciousKeys = [
-                    'F12', // Developer tools
-                    'F5',  // Refresh
-                ];
-                
-                const suspiciousCombinations = [
-                    { ctrl: true, shift: true, key: 'I' }, // Dev tools
-                    { ctrl: true, shift: true, key: 'C' }, // Console
-                    { ctrl: true, key: 'U' }, // View source
-                ];
-                
-                if (suspiciousKeys.includes(e.key)) {
-                    e.preventDefault();
-                    this.logProctoringEvent('key_combination', { key: e.key });
-                }
-                
-                for (const combo of suspiciousCombinations) {
-                    if (e.ctrlKey === combo.ctrl && 
-                        e.shiftKey === (combo.shift || false) && 
-                        e.key === combo.key) {
-                        e.preventDefault();
-                        this.logProctoringEvent('key_combination', combo);
-                    }
-                }
-            });
-        },
-        
-        async logProctoringEvent(eventType, eventData) {
-            try {
-                await fetch('/api/proctoring-event', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        event_type: eventType,
-                        event_data: eventData
-                    })
-                });
-            } catch (error) {
-                console.error('Failed to log proctoring event:', error);
-            }
+function questionPage() {
+  return {
+    // ---- STATE ----
+    questionId: {{ question.id }},
+    isCoding: '{{ question.question_type.value }}' === 'coding',
+    language: '{{ question.default_language or "python" }}',
+    autosaveStatus: 'idle',
+    execution: { loading: false, error: null, result: null },
+    consoleOutput: '', // For coding question console
+    timeRemainingText: '',
+    // Proctoring
+    isFullscreen: !!document.fullscreenElement,
+    fullscreenRetries: 0,
+    maxFullscreenRetries: 3,
+    showWebcamModal: false,
+    webcamEnabled: false,
+    webcamStream: null,
+    // MCQ
+    mcqAnswer: null,
+    mcqMessage: '',
+    mcqCorrect: false,
+    // ---- LIFECYCLE ----
+    initPage() {
+      this.setupTimers();
+      this.setupProctoringGuards();
+      // Show webcam prompt once (non-blocking)
+      setTimeout(() => { this.showWebcamModal = true; }, 400);
+
+      if (this.isCoding) {
+        this.initEditorSafe();
+        this.setupAutosave();
+      }
+    },
+
+    // ---- TIME REMAINING ----
+    setupTimers() {
+      const update = async () => {
+        try {
+          const res = await fetch('/api/assessment-time-remaining');
+          if (!res.ok) return;
+          const data = await res.json();
+          const mins = data.time_remaining_minutes ?? 0;
+          const hours = Math.floor(mins / 60);
+          const rem = mins % 60;
+          this.timeRemainingText = (hours > 0 ? `${hours}h ` : '') + `${rem}m`;
+        } catch (e) {
+          console.error("Error fetching time remaining:", e);
         }
+      };
+      update();
+      setInterval(update, 30_000);
+    },
+
+    // ---- MONACO EDITOR ----
+    initEditorSafe() {
+      // Avoid multiple initializations
+      if (window.__monacoInitStarted) return;
+      window.__monacoInitStarted = true;
+
+      const start = () => {
+        if (typeof require === 'undefined') {
+          // loader not ready yet, try again shortly (bounded)
+          let tries = 0;
+          const tick = () => {
+            if (typeof require !== 'undefined') return this.createEditorOnce();
+            if (tries++ > 40) { this.showViolation('Editor failed to load. Please refresh.'); return; }
+            setTimeout(tick, 100);
+          };
+          tick();
+          return;
+        }
+        this.createEditorOnce();
+      };
+      start();
+    },
+
+    createEditorOnce() {
+      if (window.codeEditor) return; // already created
+      require.config({ paths: { 'vs': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.39.0/min/vs' } });
+      require(['vs/editor/editor.main'], () => {
+        // Use latest_submission.code if available, otherwise question.template_code
+        const initialCode = `{{ latest_submission.code if latest_submission else question.template_code or '' }}`
+                            .replace(/&quot;/g, '"').replace(/&#x27;/g, "'");
+        const lang = this.getMonacoLanguage(this.language);
+        window.codeEditor = monaco.editor.create(document.getElementById('editor'), {
+          value: initialCode,
+          language: lang,
+          theme: 'vs-light', // Changed to vs-light for consistency with old file
+          automaticLayout: true,
+          minimap: { enabled: false },
+          fontSize: 14,
+          lineNumbers: 'on',
+          roundedSelection: false,
+          scrollBeyondLastLine: false,
+          readOnly: false,
+          wordWrap: 'bounded'
+        });
+        // Setup change listener for auto-save
+        window.codeEditor.onDidChangeModelContent(() => {
+            this.scheduleAutoSave();
+        });
+      });
+    },
+
+    getMonacoLanguage(lang) {
+        const mapping = {
+            'python': 'python',
+            'cpp': 'cpp',
+            'c': 'c',
+            'java': 'java',
+            'javascript': 'javascript'
+        };
+        return mapping[lang] || 'python';
+    },
+    
+    changeLanguage() {
+        if (window.codeEditor) {
+            monaco.editor.setModelLanguage(window.codeEditor.getModel(), this.getMonacoLanguage(this.language));
+        }
+    },
+
+    // ---- AUTOSAVE (debounced) ----
+    autoSaveTimeout: null,
+    setupAutosave() {
+      // Initial setup for auto-save interval (from old file)
+      setInterval(() => {
+          this.performAutoSave();
+      }, 30000); // Auto-save every 30 seconds
+    },
+
+    scheduleAutoSave() {
+        // Clear existing timeout
+        if (this.autoSaveTimeout) {
+            clearTimeout(this.autoSaveTimeout);
+        }
+        // Schedule auto-save after 5 seconds of inactivity
+        this.autoSaveTimeout = setTimeout(() => {
+            this.performAutoSave();
+        }, 5000);
+    },
+    
+    async performAutoSave() {
+        if (!window.codeEditor) return;
+        try {
+            const code = window.codeEditor.getValue();
+            this.autosaveStatus = 'saving';
+            const res = await fetch('/api/auto-save', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ question_id: this.questionId, code })
+            });
+            this.autosaveStatus = res.ok ? 'saved' : 'error';
+        } catch (e) {
+            console.error('Auto-save failed:', e);
+            this.autosaveStatus = 'error';
+        } finally {
+            setTimeout(() => { this.autosaveStatus = 'idle'; }, 1500);
+        }
+    },
+
+    // ---- EXECUTION ----
+    async runCode(runType) {
+      if (!window.codeEditor) return this.showViolation('Editor not ready yet.');
+      this.execution = { loading: true, error: null, result: null };
+      this.consoleOutput = '<div class="text-blue-300">Running code...</div>'; // Clear console and show loading
+
+      try {
+        const payload = {
+          question_id: this.questionId,
+          code: window.codeEditor.getValue(),
+          language: this.language,
+          run_type: runType // 'test' or 'submit'
+        };
+
+        const queueRes = await fetch('/api/execute-code', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        if (!queueRes.ok) {
+          const msg = (await queueRes.json()).detail || 'Failed to queue execution';
+          throw new Error(msg);
+        }
+
+        const queued = await queueRes.json();
+        // Poll for status
+        await this.pollSubmission(queued.submission_id, runType === 'submit');
+      } catch (err) {
+        this.execution = { loading: false, error: err.message || 'Execution failed', result: null };
+        this.consoleOutput = `<div class="text-red-400">Error: ${err.message || 'Execution failed'}</div>`;
+      }
+    },
+
+    async submitCode() {
+      if (!window.codeEditor) return;
+      
+      if (!confirm('Are you sure you want to submit this solution? This will be your final submission for this question.')) {
+          return;
+      }
+      this.runCode('submit');
+    },
+
+    async pollSubmission(submissionId, isSubmission = false) {
+        let attempts = 0;
+        const maxAttempts = 30; // 30 seconds timeout
+        const wait = (ms) => new Promise(r => setTimeout(r, ms));
+
+        const poll = async () => {
+            if (attempts >= maxAttempts) {
+                this.consoleOutput = '<div class="text-red-400">Execution timeout</div>';
+                this.execution = { loading: false, error: 'Execution timeout', result: null };
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/submission/${submissionId}/status`);
+                const status = await response.json();
+                
+                if (status.status === 'completed') {
+                    this.displayResults(status, isSubmission);
+                    this.execution = { loading: false, error: null, result: status };
+                } else if (status.status === 'error') {
+                    this.consoleOutput = `<div class="text-red-400">Execution failed: ${status.runtime_error || 'Unknown error'}</div>`;
+                    this.execution = { loading: false, error: status.runtime_error || 'Unknown error', result: status };
+                } else {
+                    attempts++;
+                    await wait(1000); // Wait 1 second before next poll
+                    poll(); // Continue polling
+                }
+            } catch (error) {
+                this.consoleOutput = `<div class="text-red-400">Error checking status: ${error.message}</div>`;
+                this.execution = { loading: false, error: error.message, result: null };
+            }
+        };
+        poll();
+    },
+    
+    displayResults(status, isSubmission) {
+        let output = '';
+        
+        if (status.compilation_error) {
+            output += `<div class="text-red-400 mb-2">Compilation Error:</div>`;
+            output += `<div class="text-red-300 mb-4">${status.compilation_error}</div>`;
+            this.consoleOutput = output;
+            return;
+        }
+        
+        if (isSubmission) {
+            output += `<div class="text-green-400 mb-2">✅ Submission Complete!</div>`;
+            output += `<div class="text-white mb-2">Overall Verdict: <span class="font-bold ${this.getVerdictColor(status.overall_verdict)}">${status.overall_verdict}</span></div>`;
+            output += `
+                <div class="text-white mb-4">
+                    Score: ${status?.total_score ?? 0}/${{ question.max_score | default(0) }}
+                </div>
+                `;
+        } else {
+            output += `<div class="text-blue-400 mb-2">🔍 Test Results (Public Test Cases Only):</div>`;
+        }
+        
+        if (status.results && status.results.length > 0) {
+            status.results.forEach((result, index) => {
+                const verdictColor = this.getVerdictColor(result.verdict);
+                output += `<div class="border-t border-gray-600 pt-2 mt-2">`;
+                output += `<div class="text-gray-300">Test Case ${index + 1}: <span class="${verdictColor} font-bold">${result.verdict}</span></div>`;
+                
+                if (result.verdict === 'OK') {
+                    output += `<div class="text-green-400">✅ Passed</div>`;
+                } else if (result.verdict === 'WA') {
+                    output += `<div class="text-red-400">❌ Wrong Answer</div>`;
+                    if (result.actual_output) {
+                        output += `<div class="text-gray-300 text-xs">Your output:</div>`;
+                        output += `<div class="text-gray-400 text-xs font-mono bg-gray-800 p-1 rounded">${result.actual_output.substring(0, 200)}</div>`;
+                    }
+                } else {
+                    output += `<div class="text-red-400">❌ ${result.verdict}</div>`;
+                    if (result.error_message) {
+                        output += `<div class="text-red-300 text-xs">${result.error_message}</div>`;
+                    }
+                }
+                
+                output += `<div class="text-gray-400 text-xs">Time: ${result.execution_time_ms}ms | Memory: ${result.memory_used_kb}KB</div>`;
+                output += `</div>`;
+            });
+        } else {
+            output += `<div class="text-gray-400 italic">No test results available.</div>`;
+        }
+        
+        this.consoleOutput = output;
+    },
+    
+    getVerdictColor(verdict) {
+        const colors = {
+            'OK': 'text-green-400',
+            'WA': 'text-red-400',
+            'TLE': 'text-yellow-400',
+            'MLE': 'text-yellow-400',
+            'RTE': 'text-red-400',
+            'CE': 'text-red-400',
+            'Accepted': 'text-green-400', // For overall verdict
+            'Wrong Answer': 'text-red-400',
+            'Time Limit Exceeded': 'text-yellow-400',
+            'Memory Limit Exceeded': 'text-yellow-400',
+            'Runtime Error': 'text-red-400',
+            'Compilation Error': 'text-red-400'
+        };
+        return colors[verdict] || 'text-gray-400';
+    },
+    
+    clearConsole() {
+        this.consoleOutput = '';
+    },
+
+    async copyCode() {
+      if (!window.codeEditor) return;
+      try {
+        await navigator.clipboard.writeText(window.codeEditor.getValue());
+        this.showToast('Code copied to clipboard!', 'success');
+      } catch (err) {
+        console.error('Failed to copy code:', err);
+        this.showToast('Failed to copy code.', 'error');
+      }
+    },
+
+    // ---- MCQ ----
+    async submitMcq() {
+      if (!this.mcqAnswer) {
+        this.mcqMessage = 'Please select an option.';
+        this.mcqCorrect = false;
+        return;
+      }
+      try {
+        const res = await fetch('/api/submit-mcq', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ question_id: this.questionId, answer: this.mcqAnswer })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Submission failed');
+        this.mcqCorrect = !!data.is_correct;
+        this.mcqMessage = data.is_correct ? 'Correct! ✅' : 'Incorrect ❌';
+      } catch (e) {
+        this.mcqCorrect = false;
+        this.mcqMessage = e.message || 'Submission failed';
+      }
+    },
+
+    // ---- PROCTORING ----
+    setupProctoringGuards() {
+      // Fullscreen tracking
+      document.addEventListener('fullscreenchange', () => {
+        this.isFullscreen = !!document.fullscreenElement;
+        if (!this.isFullscreen) {
+          this.logProctoringEvent('fullscreen_exit', { at: Date.now() }, 'high');
+          this.showViolation('Fullscreen exited. Please re-enter.');
+          // Limit retries to avoid infinite loop
+          if (this.fullscreenRetries < this.maxFullscreenRetries) {
+            this.fullscreenRetries++;
+            setTimeout(() => this.enterFullscreen(), 800);
+          }
+        }
+      });
+
+      // Window focus/blur
+      window.addEventListener('blur', () => {
+        this.logProctoringEvent('window_blur', { at: Date.now() }, 'medium');
+      });
+      window.addEventListener('focus', () => {
+        this.logProctoringEvent('window_focus', { at: Date.now() }, 'low');
+      });
+
+      // Resize
+      window.addEventListener('resize', this.debounce(() => {
+        this.logProctoringEvent('window_resize', { w: window.innerWidth, h: window.innerHeight }, 'low');
+      }, 600));
+
+      // Context menu
+      document.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        this.logProctoringEvent('right_click', { at: Date.now() }, 'low');
+        this.showViolation('Right click is disabled during assessment.');
+      });
+
+      // Copy / Paste
+      document.addEventListener('copy', () => this.logProctoringEvent('copy_paste', { action: 'copy' }, 'low'));
+      document.addEventListener('paste', () => this.logProctoringEvent('copy_paste', { action: 'paste' }, 'medium'));
+
+      // Key combos (block a few)
+      document.addEventListener('keydown', (e) => {
+        const ctrl = e.ctrlKey || e.metaKey;
+        const bad =
+          e.key === 'F12' || // devtools
+          e.key === 'F5' || // refresh
+          (ctrl && (e.key.toLowerCase() === 't' || e.key.toLowerCase() === 'w')) || // new/close tab
+          (ctrl && e.shiftKey && e.key.toLowerCase() === 'i') || // devtools
+          (ctrl && e.key.toLowerCase() === 'u'); // view source
+        if (bad) {
+          e.preventDefault();
+          this.logProctoringEvent('key_combination', { key: e.key, ctrl, shift: e.shiftKey }, 'medium');
+          this.showViolation('Restricted key combination.');
+        }
+      });
+    },
+
+    async enterFullscreen() {
+      const el = document.documentElement;
+      try {
+        if (el.requestFullscreen) await el.requestFullscreen();
+      } catch (_) {}
+    },
+
+    async toggleWebcam() {
+      if (this.webcamEnabled) {
+        this.disableWebcam();
+      } else {
+        this.showWebcamModal = true;
+      }
+    },
+
+    async enableWebcam() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        this.webcamStream = stream;
+        this.$refs.webcamVideo.srcObject = stream;
+        this.webcamEnabled = true;
+        this.showWebcamModal = false;
+      } catch (e) {
+        this.webcamEnabled = false;
+        this.showWebcamModal = false;
+        this.showViolation('Camera access denied. Continuing without webcam.');
+      }
+    },
+
+    disableWebcam() {
+      try {
+        (this.webcamStream?.getTracks() || []).forEach(t => t.stop());
+      } catch (_) {}
+      this.webcamStream = null;
+      this.webcamEnabled = false;
+    },
+
+    continueWithoutWebcam() {
+      this.webcamEnabled = false;
+      this.showWebcamModal = false;
+    },
+
+    _logDebounceTimer: null,
+    async logProctoringEvent(eventType, eventData, severity = 'medium') {
+      // Only send event types that exist in ProctoringEventType enum
+      const allowed = new Set([
+        'tab_switch', 'copy_paste', 'window_blur', 'window_focus',
+        'window_resize', 'fullscreen_exit', 'right_click',
+        'key_combination', 'suspicious_activity'
+      ]);
+      if (!allowed.has(eventType)) return;
+
+      // Debounce bursts
+      clearTimeout(this._logDebounceTimer);
+      this._logDebounceTimer = setTimeout(async () => {
+        try {
+          await fetch('/api/proctoring-event', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              event_type: eventType,
+              event_data: eventData || {},
+              severity
+            })
+          });
+        } catch (_) {
+          // swallow network errors (never block UI)
+        }
+      }, 250);
+    },
+
+    // ---- UI helpers ----
+    showToast(message, type = 'info') {
+      const el = document.createElement('div');
+      el.className = `fixed top-4 right-4 p-3 rounded-lg shadow z-50 text-white ${
+        type === 'error' ? 'bg-red-600' : type === 'success' ? 'bg-green-600' : 'bg-blue-600'
+      }`;
+      el.textContent = message;
+      document.body.appendChild(el);
+      setTimeout(() => el.remove(), 2500);
+    },
+
+    showViolation(message) {
+      const notification = document.createElement('div');
+      notification.className = 'fixed top-4 right-4 bg-red-500 text-white p-4 rounded-lg shadow-lg z-50 max-w-sm';
+      notification.innerHTML = `
+        <div class="flex items-start">
+          <i class="fas fa-exclamation-triangle mr-2 mt-1"></i>
+          <div>
+            <p class="font-semibold">Security Violation</p>
+            <p class="text-sm">${message}</p>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(notification);
+      setTimeout(() => notification.remove(), 5000);
+    },
+
+    // Generic debounce
+    debounce(fn, ms) {
+      let t;
+      return (...args) => {
+        clearTimeout(t);
+        t = setTimeout(() => fn.apply(this, args), ms);
+      };
     }
+  }
 }
 </script>
 {% endblock %}

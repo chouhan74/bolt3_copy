@@ -22,6 +22,7 @@ from app.services.export_service import export_results_to_excel, export_results_
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
 
+
 @router.get("/dashboard")
 async def admin_dashboard(
     request: Request,
@@ -262,6 +263,8 @@ async def add_question(
     time_limit_minutes: int = Form(30),
     template_code: str = Form(""),
     allowed_languages: str = Form("python,cpp,java"),
+    options: str = Form(""),
+    correct_answer: str = Form(""),
     current_user: User = Depends(get_current_admin),
     db: Session = Depends(get_db)
 ):
@@ -274,7 +277,9 @@ async def add_question(
         max_score=max_score,
         time_limit_minutes=time_limit_minutes,
         template_code=template_code,
-        allowed_languages=allowed_languages
+        allowed_languages=allowed_languages,
+        options=options if question_type == 'mcq' else None,
+        correct_answer=correct_answer if question_type == 'mcq' else None
     )
     
     db.add(question)

@@ -65,6 +65,17 @@
                             {% endif %}
                         </div>
                         <h3 class="text-sm font-medium mb-1">{{ aq.question.title }}</h3>
+                        <div class="text-xs text-blue-200 mb-2">
+                            <span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium
+                                {% if aq.question.question_type.value == 'coding' %}
+                                    bg-blue-500/20 text-blue-200
+                                {% else %}
+                                    bg-green-500/20 text-green-200
+                                {% endif %}
+                            ">
+                                {{ aq.question.question_type.value.upper() }}
+                            </span>
+                        </div>
                         <div class="flex items-center justify-between text-xs text-blue-100">
                             <span>
                                 <i class="fas fa-trophy mr-1"></i>

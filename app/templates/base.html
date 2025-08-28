@@ -1,12 +1,41 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Mercer HR Assessment Platform{% endblock %}</title>
+
+    <!-- Tailwind -->
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+
+    <!-- Load Monaco loader BEFORE Alpine (fix freeze issue) -->
+    <!-- <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.39.0/min/vs/loader.min.js"></script> -->
+
+    <!-- Alpine -->
     <script src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.39.0/min/vs/loader.min.js"></script>
+    <script>
+        require.config({ paths: { 'vs': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.39.0/min/vs' } });
+    </script>
+        <style>
+        [x-cloak] { display: none !important; }
+        
+        /* Fullscreen styles */
+        :-webkit-full-screen {
+            width: 100%;
+            height: 100%;
+        }
+        :-moz-full-screen {
+            width: 100%;
+            height: 100%;
+        }
+        :fullscreen {
+            width: 100%;
+            height: 100%;
+        }
+    </style>
     {% block extra_head %}{% endblock %}
 </head>
 <body class="bg-gray-50">
