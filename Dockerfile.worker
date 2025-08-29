@@ -2,13 +2,17 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install system dependencies
+# Install system dependencies + Java JDK (with compiler)
 RUN apt-get update && apt-get install -y \
     gcc \
     g++ \
-    openjdk-17-jdk-headless \
+    openjdk-17-jdk \
     curl \
     && rm -rf /var/lib/apt/lists/*
+
+# Ensure JAVA_HOME and PATH are set correctly
+ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+ENV PATH=$JAVA_HOME/bin:$PATH
 
 # Install Node.js
 RUN curl -fsSL https://deb.nodesource.com/setup_18.x | bash - \
