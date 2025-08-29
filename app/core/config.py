@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "sqlite:///./mercer_hr.db"
     
     # Redis settings
-    REDIS_URL: str = "redis://localhost:6379"
+    REDIS_URL: str = "redis://red-d2oo9oqdbo4c73brj9pg:6379"
     
     # Admin settings
     ADMIN_EMAIL: str = "admin@mercer.com"
