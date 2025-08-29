@@ -652,8 +652,8 @@ def execute_code_async(submission_id: int, run_type: str = "test"):
         submission.status = SubmissionStatus.COMPLETED
         submission.overall_verdict = overall_verdict
         submission.total_score = total_score
-        submission.executed_at = time.time() # Use current time for executed_at
-        
+        # submission.executed_at = time.time() # Use current time for executed_at
+        submission.executed_at = datetime.utcnow()
         db.commit() # Commit all changes including submission results
         
         # Update assessment candidate score if this is a final submission
