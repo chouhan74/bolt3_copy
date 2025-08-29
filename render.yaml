@@ -59,9 +59,8 @@ services:
     name: mercer-hr-web
     env: docker
     plan: starter
-    dockerfilePath: ./Dockerfile
-    dockerContext: .
-    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    dockerfilePath: ./Dockerfile.web
+    dockerCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: SECRET_KEY
         generateValue: true
@@ -83,15 +82,11 @@ services:
     name: mercer-hr-worker
     env: docker
     plan: starter
-    dockerfilePath: ./Dockerfile
-    dockerContext: .
-    startCommand: python -m app.workers.worker
+    dockerfilePath: ./Dockerfile.worker
+    dockerCommand: python -m app.workers.worker
     envVars:
       - key: SECRET_KEY
-        fromService:
-          name: mercer-hr-web
-          type: web
-          envVarKey: SECRET_KEY
+        sync: true
       - key: DATABASE_URL
         fromDatabase:
           name: mercer-hr-db
