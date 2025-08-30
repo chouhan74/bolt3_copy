@@ -1,35 +1,35 @@
-FROM ubuntu:22.04
+# syntax=docker/dockerfile:1
 
-# Prevent interactive tzdata prompt
-ENV DEBIAN_FRONTEND=noninteractive
+FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install Python, Java, build tools, Node.js
+# Install system dependencies + Java JDK
 RUN apt-get update && apt-get install -y \
-    python3 \
-    python3-pip \
-    python3-venv \
     gcc \
     g++ \
     openjdk-17-jdk \
     curl \
-    nodejs \
-    npm \
     && rm -rf /var/lib/apt/lists/*
 
-# Set JAVA_HOME and PATH
+# Ensure JAVA_HOME and PATH are set correctly
 ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
-ENV PATH=$JAVA_HOME/bin:$PATH
+ENV PATH="${JAVA_HOME}/bin:${PATH}"
 
-# Verify java & javac
-RUN java -version && javac -version
+# Debug: confirm Java is installed during build
+RUN echo "===> Checking Java installation (web)..." \
+    && which java || echo "java not found" \
+    && which javac || echo "javac not found" \
+    && java -version \
+    && javac -version
+
+# Install Node.js
+RUN curl -fsSL https://deb.nodesource.com/setup_18.x | bash - \
+    && apt-get install -y nodejs
 
 COPY requirements.txt .
-RUN pip3 install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
-
-EXPOSE 8000
 
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
