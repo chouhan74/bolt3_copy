@@ -367,19 +367,13 @@ class CodeExecutor:
             "run_command": ["./{executable}"],
             "timeout": settings.CODE_EXECUTION_TIMEOUT
         },
-        # "java": {
-        #     "extension": ".java",
-        #     "compile_command": ["javac", "{filename}"],
-        #     "run_command": ["java", "{classname}"],
-        #     "timeout": settings.CODE_EXECUTION_TIMEOUT
-        # }    
-    
         "java": {
             "extension": ".java",
-            "compile_command": ["/usr/lib/jvm/java-17-openjdk-amd64/bin/javac", "{filename}"],
+            "compile_command": ["javac",  "{filename}"],
             "run_command": ["java", "{classname}"],
             "timeout": settings.CODE_EXECUTION_TIMEOUT
-        }
+        }    
+    
     }
     
     def __init__(self):
