@@ -1,10 +1,8 @@
-# syntax=docker/dockerfile:1
-
 FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install system dependencies + Java JDK
+# Install system dependencies + Java JDK (with compiler)
 RUN apt-get update && apt-get install -y \
     gcc \
     g++ \
@@ -16,17 +14,22 @@ RUN apt-get update && apt-get install -y \
 ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
 ENV PATH="${JAVA_HOME}/bin:${PATH}"
 
-# Debug: confirm Java is installed during build
-RUN echo "===> Checking Java installation (web)..." \
-    && which java || echo "java not found" \
-    && which javac || echo "javac not found" \
-    && java -version \
-    && javac -version
+# Ensure javac/java are available globally
+RUN update-alternatives --install /usr/bin/java java ${JAVA_HOME}/bin/java 1 \
+    && update-alternatives --install /usr/bin/javac javac ${JAVA_HOME}/bin/javac 1 \
+    && update-alternatives --set java ${JAVA_HOME}/bin/java \
+    && update-alternatives --set javac ${JAVA_HOME}/bin/javac
+
+# Debug check (during build)
+RUN echo "===> Checking Java installation..." \
+    && which java && java -version \
+    && which javac && javac -version
 
 # Install Node.js
 RUN curl -fsSL https://deb.nodesource.com/setup_18.x | bash - \
     && apt-get install -y nodejs
 
+# Install Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
