@@ -14,7 +14,13 @@ RUN apt-get update && apt-get install -y \
 ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
 ENV PATH=$JAVA_HOME/bin:$PATH
 
-# Install Node.js
+# Ensure javac/java are available globally
+RUN update-alternatives --install /usr/bin/java java /usr/lib/jvm/java-17-openjdk-amd64/bin/java 1 \
+    && update-alternatives --install /usr/bin/javac javac /usr/lib/jvm/java-17-openjdk-amd64/bin/javac 1 \
+    && update-alternatives --set java /usr/lib/jvm/java-17-openjdk-amd64/bin/java \
+    && update-alternatives --set javac /usr/lib/jvm/java-17-openjdk-amd64/bin/javac
+
+# Install Node.js (for JS execution if needed)
 RUN curl -fsSL https://deb.nodesource.com/setup_18.x | bash - \
     && apt-get install -y nodejs
 
