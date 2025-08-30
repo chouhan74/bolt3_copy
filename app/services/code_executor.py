@@ -336,6 +336,9 @@ from app.models.question import TestCase
 from app.core.config import settings
 from datetime import datetime
 
+import shutil
+print("Java path:", shutil.which("java"))
+print("Javac path:", shutil.which("javac"))
 
 logger = logging.getLogger(__name__)
 
