@@ -2,7 +2,7 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install system dependencies
+# Install system dependencies + Java JDK (with compiler)
 RUN apt-get update && apt-get install -y \
     gcc \
     g++ \
@@ -10,7 +10,17 @@ RUN apt-get update && apt-get install -y \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Node.js for potential JS execution
+# Ensure JAVA_HOME and PATH are set correctly
+ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+ENV PATH=$JAVA_HOME/bin:$PATH
+
+# Ensure javac/java are available globally
+RUN update-alternatives --install /usr/bin/java java /usr/lib/jvm/java-17-openjdk-amd64/bin/java 1 \
+    && update-alternatives --install /usr/bin/javac javac /usr/lib/jvm/java-17-openjdk-amd64/bin/javac 1 \
+    && update-alternatives --set java /usr/lib/jvm/java-17-openjdk-amd64/bin/java \
+    && update-alternatives --set javac /usr/lib/jvm/java-17-openjdk-amd64/bin/javac
+
+# Install Node.js (for JS execution if needed)
 RUN curl -fsSL https://deb.nodesource.com/setup_18.x | bash - \
     && apt-get install -y nodejs
 
@@ -21,4 +31,4 @@ COPY . .
 
 EXPOSE 8000
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
