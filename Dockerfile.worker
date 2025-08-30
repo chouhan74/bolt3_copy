@@ -1,32 +1,32 @@
-FROM python:3.11-slim
+FROM ubuntu:22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
 
 WORKDIR /app
 
-# Install system dependencies + Java JDK (with compiler)
+# Install Python, Java, build tools, Node.js
 RUN apt-get update && apt-get install -y \
+    python3 \
+    python3-pip \
+    python3-venv \
     gcc \
     g++ \
     openjdk-17-jdk \
     curl \
+    nodejs \
+    npm \
     && rm -rf /var/lib/apt/lists/*
 
-# Ensure JAVA_HOME and PATH are set correctly
+# Set JAVA_HOME and PATH
 ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
 ENV PATH=$JAVA_HOME/bin:$PATH
 
-# Ensure javac/java are available globally
-RUN update-alternatives --install /usr/bin/java java /usr/lib/jvm/java-17-openjdk-amd64/bin/java 1 \
-    && update-alternatives --install /usr/bin/javac javac /usr/lib/jvm/java-17-openjdk-amd64/bin/javac 1 \
-    && update-alternatives --set java /usr/lib/jvm/java-17-openjdk-amd64/bin/java \
-    && update-alternatives --set javac /usr/lib/jvm/java-17-openjdk-amd64/bin/javac
-
-# Install Node.js (for JS execution if needed)
-RUN curl -fsSL https://deb.nodesource.com/setup_18.x | bash - \
-    && apt-get install -y nodejs
+# Verify java & javac
+RUN java -version && javac -version
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip3 install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-CMD ["python", "-m", "app.workers.worker"]
+CMD ["python3", "-m", "app.workers.worker"]
