@@ -17,3 +17,4 @@ google-auth
 aiofiles
 python-dotenv
 pydantic-settings
+honcho
