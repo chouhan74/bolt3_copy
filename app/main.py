@@ -112,6 +112,28 @@ async def lifespan(app: FastAPI):
     # Create uploads directory
     os.makedirs("uploads", exist_ok=True)
     os.makedirs("app/static/uploads", exist_ok=True)
+    import shutil, subprocess
+    
+    # Check Java installation
+    java_path = shutil.which("java")
+    javac_path = shutil.which("javac")
+    logger.info(f"Java path: {java_path}")
+    logger.info(f"Javac path: {javac_path}")
+    
+    if java_path:
+        try:
+            result = subprocess.run([java_path, "-version"], capture_output=True, text=True)
+            logger.info(f"Java version:\n{result.stderr or result.stdout}")
+        except Exception as e:
+            logger.error(f"Error running java -version: {e}")
+    
+    if javac_path:
+        try:
+            result = subprocess.run([javac_path, "-version"], capture_output=True, text=True)
+            logger.info(f"Javac version:\n{result.stderr or result.stdout}")
+        except Exception as e:
+            logger.error(f"Error running javac -version: {e}")
+
     
     #  Ensure tables exist
     try:
