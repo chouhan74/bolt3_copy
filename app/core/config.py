@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     CODE_EXECUTION_TIMEOUT: int = 10  # seconds
     CODE_EXECUTION_MEMORY_LIMIT: int = 128  # MB
     
+
+    # Java settings
+    JAVA_HOME: str = "/usr/lib/jvm/java-17-openjdk-amd64"
     # Google Drive settings (optional)
     GOOGLE_DRIVE_FOLDER_ID: str = ""
     GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON: str = ""
